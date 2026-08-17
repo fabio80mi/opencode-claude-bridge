@@ -428,15 +428,40 @@ function maybeUnquoteText(text: string): string {
   return text;
 }
 
-export function stripAssistantPrefillForClaude(
-  messages: Array<{ role?: string; content?: unknown }>,
-): Array<{ role?: string; content?: unknown }> {
-  if (messages.length === 0) return messages;
-  const last = messages[messages.length - 1];
-  if (last?.role !== "assistant") return messages;
-  if (typeof last.content !== "string") return messages;
-  if (last.content.trim() !== "Continue with your tasks.") return messages;
-  return messages.slice(0, -1);
+type ClaudeMessage = {
+  role?: string
+  content?: unknown
+}
+
+function assistantText(content: unknown): string | undefined {
+  if (typeof content === "string") return content
+
+  if (!Array.isArray(content)) return undefined
+
+  const textParts = content.filter(
+    (part): part is { text?: unknown } =>
+      part !== null &&
+      typeof part === "object" &&
+      "text" in part,
+  )
+
+  if (textParts.length !== content.length) return undefined
+
+  return textParts.map((part) => String(part.text ?? "")).join("")
+}
+
+export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
+  const last = messages.at(-1)
+  if (last?.role !== "assistant") return messages
+
+  const text = assistantText(last.content)?.trim()
+  if (!text) return messages
+
+  const isPrefill =
+    text === "Continue with your tasks." ||
+    text.startsWith("CRITICAL - MAXIMUM STEPS REACHED")
+
+  return isPrefill ? messages.slice(0, -1) : messages
 }
 
 function normalizeSystemBlocks(
