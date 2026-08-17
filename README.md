@@ -1,5 +1,15 @@
 # opencode-claude-bridge
 
+## This fork
+
+This repository is the maintained fork at [fabio80mi/opencode-claude-bridge](https://github.com/fabio80mi/opencode-claude-bridge).
+
+It lets OpenCode use Claude authentication and Claude Code-compatible request/response behavior. The fork exists because newer OpenCode hook payloads can expose model identity as an object instead of a plain string, while older bridge code assumes it can call `.match()` directly on that value. That can prevent the bridge from loading; when the bridge does not load, its Anthropic request cleanup—including assistant-prefill stripping—never runs.
+
+The fork normalizes both current and legacy model identity shapes before model-name parsing and system-prompt rewriting. It also retains the fix that removes OpenCode's synthetic maximum-steps assistant prefill before requests reach Anthropic.
+
+Implementation history and verification notes: [`docs/OPENCODE-PREFILL-FIX.md`](docs/OPENCODE-PREFILL-FIX.md).
+
 Use your Claude Pro/Max subscription in [OpenCode](https://opencode.ai). If you're logged into the Claude CLI, it just works — no extra setup.
 
 ## Install

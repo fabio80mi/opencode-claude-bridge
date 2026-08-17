@@ -175,12 +175,26 @@ const CLAUDE_PREFIX =
  * Falls back to the raw model ID if the convention doesn't match, so future
  * naming changes are surfaced truthfully instead of silently wrong.
  */
-export function deriveModelDisplayName(modelId: string): string {
-  const m = modelId.match(/^claude-([a-z]+)-(\d+)-(\d+)(?:-\d+)?$/i);
+type ModelIdentity =
+  | string
+  | { id?: unknown; modelID?: unknown; providerID?: unknown };
+
+function normalizeModelId(model: ModelIdentity | undefined): string | undefined {
+  if (typeof model === "string") return model;
+  if (!model || typeof model !== "object") return undefined;
+  if (typeof model.id === "string") return model.id;
+  if (typeof model.modelID === "string") return model.modelID;
+  return undefined;
+}
+
+export function deriveModelDisplayName(model: ModelIdentity): string {
+  const modelId = normalizeModelId(model);
+  if (!modelId) return "";
+  const m = modelId.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d+)?$/i);
   if (!m) return modelId;
   const [, family, major, minor] = m;
   const capitalized = family.charAt(0).toUpperCase() + family.slice(1).toLowerCase();
-  return `${capitalized} ${major}.${minor}`;
+  return minor ? `${capitalized} ${major}.${minor}` : `${capitalized} ${major}`;
 }
 
 /**
@@ -191,10 +205,11 @@ export function deriveModelDisplayName(modelId: string): string {
  */
 export function rewriteSystemBlocksForModel(
   blocks: Array<{ type?: string; text?: string }>,
-  modelId: string | undefined,
+  modelId: ModelIdentity | undefined,
 ): Array<{ type?: string; text?: string }> {
-  if (!modelId) return blocks;
-  const display = deriveModelDisplayName(modelId);
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!normalizedModelId) return blocks;
+  const display = deriveModelDisplayName(normalizedModelId);
 
   return blocks.map((block) => {
     if (block?.type !== "text" || typeof block.text !== "string") return block;
@@ -202,7 +217,7 @@ export function rewriteSystemBlocksForModel(
 
     text = text.replace(
       /You are powered by the model named [^\n]+? The exact model ID is [a-z0-9.-]+\./g,
-      `You are powered by the model named ${display}. The exact model ID is ${modelId}.`,
+      `You are powered by the model named ${display}. The exact model ID is ${normalizedModelId}.`,
     );
 
     return { ...block, text };

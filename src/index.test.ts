@@ -1089,6 +1089,14 @@ describe("deriveModelDisplayName", () => {
     assert.equal(deriveModelDisplayName("weird-custom-model"), "weird-custom-model");
     assert.equal(deriveModelDisplayName("claude-3-5-sonnet-20241022"), "claude-3-5-sonnet-20241022");
   });
+
+  it("accepts current model identity objects", () => {
+    assert.equal(deriveModelDisplayName({ id: "claude-opus-5", providerID: "anthropic" }), "Opus 5");
+  });
+
+  it("accepts legacy model identity objects", () => {
+    assert.equal(deriveModelDisplayName({ modelID: "claude-opus-5", providerID: "anthropic" }), "Opus 5");
+  });
 });
 
 describe("rewriteSystemBlocksForModel", () => {
@@ -1111,6 +1119,10 @@ describe("rewriteSystemBlocksForModel", () => {
   it("leaves blocks untouched when no model id is provided", () => {
     const [out] = rewriteSystemBlocksForModel([sourceBlock], undefined);
     assert.equal(out, sourceBlock);
+  });
+
+  it("leaves blocks untouched for an invalid model identity without throwing", () => {
+    assert.deepEqual(rewriteSystemBlocksForModel([sourceBlock], { providerID: "anthropic" }), [sourceBlock]);
   });
 
   it("handles a dated variant without re-including the date suffix in the display name", () => {
