@@ -542,17 +542,20 @@ export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
 	if (last?.role !== "assistant") return messages;
 
 	const text = assistantText(last.content)?.trim();
-	if (!text) return messages;
+	if (!text) {
+		writeBridgeLog(
+			`stripAssistantPrefillForClaude: no text, role=${last.role}, contentType=${typeof last.content}`,
+		);
+		return messages;
+	}
 
 	const isPrefill =
 		text === "Continue with your tasks." ||
 		text.startsWith("CRITICAL - MAXIMUM STEPS REACHED");
 
-	if (!isPrefill) {
-		writeBridgeLog(
-			`non-prefill assistant message text=${JSON.stringify(text).slice(0, 500)}`,
-		);
-	}
+	writeBridgeLog(
+		`stripAssistantPrefillForClaude: isPrefill=${isPrefill} text=${JSON.stringify(text).slice(0, 200)}`,
+	);
 
 	return isPrefill ? messages.slice(0, -1) : messages;
 }
@@ -804,6 +807,19 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 						if (body && typeof body === "string") {
 							try {
 								const parsed = JSON.parse(body);
+								writeBridgeLog(
+									`fetch request model=${parsed.model} messagesCount=${
+										Array.isArray(parsed.messages)
+											? parsed.messages.length
+											: "N/A"
+									} lastRole=${
+										parsed.messages &&
+										Array.isArray(parsed.messages) &&
+										parsed.messages.length > 0
+											? parsed.messages[parsed.messages.length - 1].role
+											: "N/A"
+									}`,
+								);
 								let requestUrl = "";
 								try {
 									requestUrl = String(
