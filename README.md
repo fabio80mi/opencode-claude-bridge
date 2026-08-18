@@ -182,6 +182,33 @@ All OAuth and header parameters can be overridden via environment variables:
 
 Most users won't need to change these — the bridge auto-detects the installed Claude CLI version and uses matching defaults.
 
+## Debugging
+
+Set `OP encode_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. When enabled, the plugin writes detailed request/response diagnostics to `/tmp/opencode-claude-bridge.log`.
+
+```bash
+OP encode_CLAUDE_BRIDGE_DEBUG=true opencode
+```
+
+Or add it to your shell profile for persistent debugging:
+
+```bash
+export OP encode_CLAUDE_BRIDGE_DEBUG=true
+```
+
+When disabled or unset (default), logging is skipped entirely — zero runtime overhead.
+
+Log entries include:
+
+- Plugin initialization
+- System transform hook entry/exit
+- Fetch wrapper auth bypass / OAuth refresh failures
+- Request model, message count, and last message role before and after prefill stripping
+- Final request state sent to Anthropic
+- HTTP response status
+
+If you're reporting an issue, attach `/tmp/opencode-claude-bridge.log` — it lets developers trace exactly what the bridge saw and sent without relying on OpenCode's own log output.
+
 ## Local validation
 
 To validate how local OpenCode traffic is being classified and how closely it matches Claude Code on the wire:
