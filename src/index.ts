@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import { join } from "node:path";
+
 import {
 	createAuthorizationRequest,
 	exchangeCodeForTokens,
@@ -34,6 +35,13 @@ import {
 	shouldUseClaudeToolSchemas,
 } from "./claude-tools.js";
 import { createSseProcessor } from "./stream.js";
+
+const BRIDGE_LOG = "/tmp/opencode-claude-bridge.log";
+function writeBridgeLog(message: string) {
+	try {
+		appendFileSync(BRIDGE_LOG, `${new Date().toISOString()} ${message}\n`);
+	} catch {}
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -541,9 +549,8 @@ export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
 		text.startsWith("CRITICAL - MAXIMUM STEPS REACHED");
 
 	if (!isPrefill) {
-		console.error(
-			"[opencode-claude-bridge] non-prefill assistant message",
-			JSON.stringify({ text }).slice(0, 500),
+		writeBridgeLog(
+			`non-prefill assistant message text=${JSON.stringify(text).slice(0, 500)}`,
 		);
 	}
 
@@ -678,7 +685,7 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 		if (tokens) await storeAuth(client, tokens);
 	} catch {}
 
-	console.error("[opencode-claude-bridge] plugin initialized");
+	writeBridgeLog("plugin initialized");
 
 	return {
 		"experimental.chat.system.transform": (
@@ -834,37 +841,25 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 								}
 
 								if (!parsed.system) parsed.system = [];
-								console.error(
-									"[opencode-claude-bridge] pre-strip messages",
-									JSON.stringify({
-										messagesType: typeof parsed.messages,
-										messagesIsArray: Array.isArray(parsed.messages),
-										lastMessage:
-											parsed.messages &&
-											Array.isArray(parsed.messages) &&
-											parsed.messages.length > 0
-												? parsed.messages[parsed.messages.length - 1]
-												: undefined,
-									}).slice(0, 1000),
-								);
 								if (Array.isArray(parsed.messages)) {
+									writeBridgeLog(
+										`pre-strip messages count=${
+											parsed.messages.length
+										} lastRole=${
+											parsed.messages[parsed.messages.length - 1]?.role
+										}`,
+									);
 									parsed.messages = stripAssistantPrefillForClaude(
 										parsed.messages,
 									);
+									writeBridgeLog(
+										`post-strip messages count=${
+											parsed.messages.length
+										} lastRole=${
+											parsed.messages[parsed.messages.length - 1]?.role
+										}`,
+									);
 								}
-								console.error(
-									"[opencode-claude-bridge] post-strip messages",
-									JSON.stringify({
-										messagesType: typeof parsed.messages,
-										messagesIsArray: Array.isArray(parsed.messages),
-										lastMessage:
-											parsed.messages &&
-											Array.isArray(parsed.messages) &&
-											parsed.messages.length > 0
-												? parsed.messages[parsed.messages.length - 1]
-												: undefined,
-									}).slice(0, 1000),
-								);
 								// context_management and output_config.effort are only
 								// supported by thinking-capable models. Sending them to
 								// haiku (used for title generation) produces a 400.
