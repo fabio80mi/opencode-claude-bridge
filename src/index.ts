@@ -1115,6 +1115,12 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 						writeBridgeLog(
 							`fetch response status=${response.status} statusText=${response.statusText}`,
 						);
+						if (response.status !== 200 && BRIDGE_DEBUG) {
+							try {
+								const text = await response.clone().text();
+								writeBridgeLog(`fetch error body=${text.slice(0, 2000)}`);
+							} catch {}
+						}
 
 						// 429 auto-refresh: rate limits are per-access-token, so refreshing
 						// the token gives us a fresh rate limit bucket. Try up to 2 retries.
