@@ -539,23 +539,34 @@ function assistantText(content: unknown): string | undefined {
 export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
 	if (!Array.isArray(messages)) return messages;
 	const last = messages.at(-1);
-	if (last?.role !== "assistant") return messages;
-
-	const text = assistantText(last.content)?.trim();
-	if (!text) {
+	if (last?.role !== "assistant") {
 		writeBridgeLog(
-			`stripAssistantPrefillForClaude: no text, role=${last.role}, contentType=${typeof last.content}`,
+			`stripAssistantPrefillForClaude: skip role=${last?.role} contentLength=${
+				typeof last?.content === "string"
+					? (last.content as string).length
+					: Array.isArray(last?.content)
+						? last.content.length
+						: "N/A"
+			}`,
 		);
 		return messages;
 	}
 
+	const text = assistantText(last.content)?.trim();
+	if (!text) {
+		writeBridgeLog(
+			`stripAssistantPrefillForClaude: empty text role=${last.role} contentType=${typeof last.content}`,
+		);
+		return messages;
+	}
+
+	writeBridgeLog(
+		`stripAssistantPrefillForClaude: assistant text=${JSON.stringify(text).slice(0, 500)}`,
+	);
+
 	const isPrefill =
 		text === "Continue with your tasks." ||
 		text.startsWith("CRITICAL - MAXIMUM STEPS REACHED");
-
-	writeBridgeLog(
-		`stripAssistantPrefillForClaude: isPrefill=${isPrefill} text=${JSON.stringify(text).slice(0, 200)}`,
-	);
 
 	return isPrefill ? messages.slice(0, -1) : messages;
 }
