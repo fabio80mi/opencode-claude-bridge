@@ -832,6 +832,19 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 								}
 
 								if (!parsed.system) parsed.system = [];
+								console.error(
+									"[opencode-claude-bridge] pre-strip messages",
+									JSON.stringify({
+										messagesType: typeof parsed.messages,
+										messagesIsArray: Array.isArray(parsed.messages),
+										lastMessage:
+											parsed.messages &&
+											Array.isArray(parsed.messages) &&
+											parsed.messages.length > 0
+												? parsed.messages[parsed.messages.length - 1]
+												: undefined,
+									}).slice(0, 1000),
+								);
 								if (Array.isArray(parsed.messages)) {
 									parsed.messages = stripAssistantPrefillForClaude(
 										parsed.messages,
