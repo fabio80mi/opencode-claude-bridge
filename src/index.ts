@@ -695,6 +695,9 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 			input: { model?: { providerID: string } },
 			output: { system: string[] },
 		) => {
+			writeBridgeLog(
+				`system.transform: providerID=${input.model?.providerID} systemCount=${output.system.length}`,
+			);
 			if (input.model?.providerID !== "anthropic") return;
 			if (output.system.some((s) => s.includes(CLAUDE_PREFIX))) return;
 			if (output.system.length > 0) {
@@ -702,6 +705,9 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 			} else {
 				output.system.push(CLAUDE_PREFIX);
 			}
+			writeBridgeLog(
+				`system.transform: after inject systemCount=${output.system.length}`,
+			);
 		},
 
 		auth: {
@@ -753,8 +759,14 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 					// apiKey and authToken are present. Keep the placeholder apiKey for
 					// provider init, and let the fetch wrapper supply the real bearer token.
 					async fetch(input: string | URL | Request, init?: RequestInit) {
+						writeBridgeLog(
+							`fetch start inputType=${typeof input} initType=${typeof init} initBodyType=${typeof init?.body}`,
+						);
 						const auth = await getAuth();
-						if (auth.type !== "oauth") return fetch(input, init);
+						if (auth.type !== "oauth") {
+							writeBridgeLog(`fetch bypass: authType=${auth.type}`);
+							return fetch(input, init);
+						}
 
 						let accessToken = auth.access || null;
 						if (!accessToken || !auth.expires || auth.expires < Date.now()) {
@@ -762,14 +774,13 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 								accessToken = await refreshAuth(auth, client);
 							} catch (err) {
 								const detail = err instanceof Error ? err.message : String(err);
-								console.error(
-									`[opencode-claude-bridge] OAuth refresh failed: ${detail}`,
-								);
+								writeBridgeLog(`fetch OAuth refresh failed: ${detail}`);
 								return buildAuthFailureResponse(detail);
 							}
 						}
 
 						if (!accessToken) {
+							writeBridgeLog("fetch no accessToken available");
 							return buildAuthFailureResponse(
 								"No usable OAuth access token is available.",
 							);
@@ -1001,6 +1012,19 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 								}
 
 								body = JSON.stringify(parsed);
+								writeBridgeLog(
+									`fetch final model=${parsed.model} messagesCount=${
+										Array.isArray(parsed.messages)
+											? parsed.messages.length
+											: "N/A"
+									} lastRole=${
+										parsed.messages &&
+										Array.isArray(parsed.messages) &&
+										parsed.messages.length > 0
+											? parsed.messages[parsed.messages.length - 1].role
+											: "N/A"
+									}`,
+								);
 							} catch {}
 						}
 
@@ -1044,6 +1068,9 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 							});
 
 						let response = await doFetch();
+						writeBridgeLog(
+							`fetch response status=${response.status} statusText=${response.statusText}`,
+						);
 
 						// 429 auto-refresh: rate limits are per-access-token, so refreshing
 						// the token gives us a fresh rate limit bucket. Try up to 2 retries.
