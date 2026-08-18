@@ -540,6 +540,13 @@ export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
 		text === "Continue with your tasks." ||
 		text.startsWith("CRITICAL - MAXIMUM STEPS REACHED");
 
+	if (!isPrefill) {
+		console.error(
+			"[opencode-claude-bridge] non-prefill assistant message",
+			JSON.stringify({ text }).slice(0, 500),
+		);
+	}
+
 	return isPrefill ? messages.slice(0, -1) : messages;
 }
 
