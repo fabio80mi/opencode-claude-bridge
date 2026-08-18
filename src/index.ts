@@ -37,7 +37,7 @@ import {
 import { createSseProcessor } from "./stream.js";
 
 const BRIDGE_LOG = "/tmp/opencode-claude-bridge.log";
-const BRIDGE_DEBUG = process.env["OP encode_CLAUDE_BRIDGE_DEBUG"] === "true";
+const BRIDGE_DEBUG = process.env["OPENCODE_CLAUDE_BRIDGE_DEBUG"] === "true";
 function writeBridgeLog(message: string) {
 	if (!BRIDGE_DEBUG) return;
 	try {

@@ -184,16 +184,16 @@ Most users won't need to change these — the bridge auto-detects the installed 
 
 ## Debugging
 
-Set `OP encode_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. When enabled, the plugin writes detailed request/response diagnostics to `/tmp/opencode-claude-bridge.log`.
+Set `OPENCODE_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. When enabled, the plugin writes detailed request/response diagnostics to `/tmp/opencode-claude-bridge.log`.
 
 ```bash
-OP encode_CLAUDE_BRIDGE_DEBUG=true opencode
+OPENCODE_CLAUDE_BRIDGE_DEBUG=true opencode
 ```
 
 Or add it to your shell profile for persistent debugging:
 
 ```bash
-export OP encode_CLAUDE_BRIDGE_DEBUG=true
+export OPENCODE_CLAUDE_BRIDGE_DEBUG=true
 ```
 
 When disabled or unset (default), logging is skipped entirely — zero runtime overhead.
