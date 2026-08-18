@@ -678,6 +678,8 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 		if (tokens) await storeAuth(client, tokens);
 	} catch {}
 
+	console.error("[opencode-claude-bridge] plugin initialized");
+
 	return {
 		"experimental.chat.system.transform": (
 			input: { model?: { providerID: string } },
@@ -850,6 +852,19 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 										parsed.messages,
 									);
 								}
+								console.error(
+									"[opencode-claude-bridge] post-strip messages",
+									JSON.stringify({
+										messagesType: typeof parsed.messages,
+										messagesIsArray: Array.isArray(parsed.messages),
+										lastMessage:
+											parsed.messages &&
+											Array.isArray(parsed.messages) &&
+											parsed.messages.length > 0
+												? parsed.messages[parsed.messages.length - 1]
+												: undefined,
+									}).slice(0, 1000),
+								);
 								// context_management and output_config.effort are only
 								// supported by thinking-capable models. Sending them to
 								// haiku (used for title generation) produces a 400.
