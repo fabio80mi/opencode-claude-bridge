@@ -1051,7 +1051,7 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 										);
 									}
 									writeBridgeLog(
-										`DEBUG fullRequestBody=${JSON.stringify(parsed).slice(0, 5000)}`,
+										`DEBUG fullRequestBody=${JSON.stringify(parsed)}`,
 									);
 								}
 
