@@ -1024,6 +1024,34 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 									}
 								}
 
+								// ── DEBUG: dump last message before fetch ──
+								if (BRIDGE_DEBUG) {
+									const last = Array.isArray(parsed.messages)
+										? parsed.messages[parsed.messages.length - 1]
+										: null;
+									const roleChain = Array.isArray(parsed.messages)
+										? parsed.messages
+												.map((m: { role: string }) => m.role)
+												.join("->")
+										: "<no messages>";
+									writeBridgeLog(
+										`DEBUG request model=${parsed.model} messagesCount=${
+											Array.isArray(parsed.messages)
+												? parsed.messages.length
+												: 0
+										} lastRole=${last?.role} roleChain=${roleChain}`,
+									);
+									if (last) {
+										const contentStr =
+											typeof last.content === "string"
+												? last.content
+												: JSON.stringify(last.content);
+										writeBridgeLog(
+											`DEBUG lastMessage role=${last.role} contentType=${typeof last.content} content=${JSON.stringify(contentStr).slice(0, 1000)}`,
+										);
+									}
+								}
+
 								body = JSON.stringify(parsed);
 								writeBridgeLog(
 									`fetch final model=${parsed.model} messagesCount=${
