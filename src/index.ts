@@ -518,11 +518,6 @@ function maybeUnquoteText(text: string): string {
 	return text;
 }
 
-type ClaudeMessage = {
-	role?: string;
-	content?: unknown;
-};
-
 function assistantText(content: unknown): string | undefined {
 	if (typeof content === "string") return content;
 
@@ -533,9 +528,65 @@ function assistantText(content: unknown): string | undefined {
 			part !== null && typeof part === "object" && "text" in part,
 	);
 
-	if (textParts.length !== content.length) return undefined;
+	if (textParts.length === 0) return undefined;
 
-	return textParts.map((part) => String(part.text ?? "")).join("");
+	const joined = textParts.map((part) => String(part.text ?? "")).join("");
+	return joined || undefined;
+}
+
+type ClaudeMessage = {
+	role?: string;
+	content?: unknown;
+};
+
+function sanitizeMessageContent(
+	content: Array<Record<string, unknown>>,
+	thinkingConfig: Record<string, unknown> | undefined,
+): Array<Record<string, unknown>> {
+	let removedThinking = 0;
+	let removedCaller = 0;
+	let removedEmptyText = 0;
+
+	const sanitized: Array<Record<string, unknown>> = [];
+	for (const block of content) {
+		// Drop OpenCode thinking blocks when Anthropic thinking is not enabled.
+		if (block.type === "thinking") {
+			if (!thinkingConfig) {
+				removedThinking++;
+				continue;
+			}
+			sanitized.push(block);
+			continue;
+		}
+
+		// Drop empty/whitespace-only text blocks.
+		if (
+			block.type === "text" &&
+			typeof block.text === "string" &&
+			!block.text.trim()
+		) {
+			removedEmptyText++;
+			continue;
+		}
+
+		// Strip OpenCode-only metadata from tool_use blocks.
+		if (block.type === "tool_use" && block.caller) {
+			removedCaller++;
+			const { caller, ...rest } = block;
+			sanitized.push(rest as Record<string, unknown>);
+			continue;
+		}
+
+		sanitized.push(block);
+	}
+
+	if (removedThinking > 0 || removedCaller > 0 || removedEmptyText > 0) {
+		writeBridgeLog(
+			`sanitizeMessageContent: removed thinking=${removedThinking} caller=${removedCaller} emptyText=${removedEmptyText} resultCount=${sanitized.length}`,
+		);
+	}
+
+	return sanitized;
 }
 
 export function stripAssistantPrefillForClaude(messages: ClaudeMessage[]) {
@@ -993,6 +1044,7 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 								// - Translate tool names (OpenCode → Claude Code)
 								// - Translate tool_use input arguments (camelCase → snake_case)
 								// - Clean up text blocks
+								// - Strip OpenCode-specific fields that Anthropic rejects
 								if (parsed.messages && Array.isArray(parsed.messages)) {
 									for (const msg of parsed.messages) {
 										if (!Array.isArray(msg.content)) continue;
@@ -1006,11 +1058,6 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 											}
 											if (block.type === "tool_use" && block.name) {
 												block.name = mapOutboundToolName(block.name);
-												// Consolidated OpenCode → Claude argument translation:
-												// key renames, Agent/AskUserQuestion/Skill/WebFetch/TodoWrite
-												// field bridging. Mirrors translateToolArgsJsonString
-												// (inbound) so round-trips preserve meaning. See
-												// translateArgsOpencodeToClaude in claude-tools.ts.
 												if (block.input && typeof block.input === "object") {
 													block.input = translateArgsOpencodeToClaude(
 														block.name,
@@ -1018,9 +1065,13 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 													);
 												}
 											}
-											// tool_result blocks reference tool names via tool_use_id,
-											// no name translation needed here.
 										}
+										// Second pass: strip OpenCode-only metadata after
+										// normalization so logging reflects final payload.
+										msg.content = sanitizeMessageContent(
+											msg.content,
+											parsed.thinking,
+										);
 									}
 								}
 
