@@ -182,6 +182,16 @@ All OAuth and header parameters can be overridden via environment variables:
 
 Most users won't need to change these — the bridge auto-detects the installed Claude CLI version and uses matching defaults.
 
+## Recent fixes
+
+This fork includes several fixes discovered during debugging sessions:
+
+- **Plugin loading** — Use the absolute plugin path `/home/ubuntu/.config/opencode/plugins/opencode-claude-bridge/dist/index.js` in `opencode.jsonc` to prevent OpenCode from falling back to an unfixed npm/cache version when launched from a different directory.
+- **Assistant prefill stripping** — The bridge strips OpenCode's synthetic maximum-steps assistant prefill before requests reach Anthropic, preventing `This model does not support assistant message prefill` errors.
+- **Message sanitization** — Before sending to Anthropic, the bridge removes OpenCode-specific message content blocks that Anthropic rejects: `thinking` blocks, `caller` metadata on `tool_use` blocks, and empty/whitespace-only `text` blocks.
+- **Thinking config sanitization** — Strips OpenCode-only `block_binding` from the `thinking` config object to prevent `thinking.adaptive.block_binding: Extra inputs are not permitted` errors. Thinking functionality is preserved.
+- **Debug logging** — Set `OPENCODE_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. Writes to `/tmp/opencode-claude-bridge.log`. When disabled or unset, logging is skipped entirely with zero runtime overhead.
+
 ## Debugging
 
 Set `OPENCODE_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. When enabled, the plugin writes detailed request/response diagnostics to `/tmp/opencode-claude-bridge.log`.
@@ -204,6 +214,8 @@ Log entries include:
 - System transform hook entry/exit
 - Fetch wrapper auth bypass / OAuth refresh failures
 - Request model, message count, and last message role before and after prefill stripping
+- Message sanitization counts (`thinking`, `caller`, `emptyText` removed)
+- Thinking config sanitization (`block_binding` removal)
 - Final request state sent to Anthropic
 - HTTP response status
 
