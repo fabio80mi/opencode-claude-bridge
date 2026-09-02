@@ -921,6 +921,18 @@ const OpenCodeClaudeBridge = async ({ client }: { client: PluginClient }) => {
 									parsed.thinking = { type: "adaptive" };
 								}
 
+								// Strip OpenCode-only thinking fields that Anthropic rejects.
+								if (parsed.thinking && typeof parsed.thinking === "object") {
+									const { block_binding, ...anthropicThinking } =
+										parsed.thinking as Record<string, unknown>;
+									if (block_binding) {
+										writeBridgeLog(
+											`stripThinkingBlockBinding: removed block_binding=${JSON.stringify(block_binding)} thinkingType=${anthropicThinking.type}`,
+										);
+									}
+									parsed.thinking = anthropicThinking;
+								}
+
 								// Anthropic requires temperature=1 when thinking is enabled/adaptive
 								const thinkingType = parsed.thinking?.type;
 								if (
