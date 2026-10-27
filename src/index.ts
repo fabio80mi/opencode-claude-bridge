@@ -282,17 +282,25 @@ export function getClaudeToolsForActiveOpenCodeTools(
 	tools: unknown,
 ): ReturnType<typeof getClaudeTools> {
 	if (!Array.isArray(tools)) return [];
-	const activeClaudeNames = new Set(
+	const mapped = (tool: unknown): string | undefined => {
+		if (!tool || typeof tool !== "object") return undefined;
+		const name = (tool as { name?: unknown }).name;
+		if (typeof name !== "string") return undefined;
+		return OUTBOUND_TOOL_NAME_MAP[name] || name;
+	};
+	const active = new Set(
 		tools
-			.map((tool) => {
-				if (!tool || typeof tool !== "object") return undefined;
-				const name = (tool as { name?: unknown }).name;
-				if (typeof name !== "string") return undefined;
-				return OUTBOUND_TOOL_NAME_MAP[name] || name;
-			})
+			.map(mapped)
 			.filter((name): name is string => typeof name === "string"),
 	);
-	return getClaudeTools().filter((tool) => activeClaudeNames.has(tool.name));
+	const claude = getClaudeTools().filter((tool) => active.has(tool.name));
+	const claudeNames = new Set(claude.map((tool) => tool.name));
+	// shortcut: plugin/MCP tools keep OpenCode's schema; drop this if Anthropic rejects non-Claude-Code tools
+	const passthrough = tools.filter((tool) => {
+		const name = mapped(tool);
+		return typeof name === "string" && !claudeNames.has(name);
+	});
+	return [...claude, ...passthrough] as ReturnType<typeof getClaudeTools>;
 }
 
 const oauthProfileCache = new Map<string, Promise<OAuthProfile | null>>();

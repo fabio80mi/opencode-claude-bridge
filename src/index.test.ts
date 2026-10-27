@@ -247,12 +247,23 @@ describe("tool schema selection", () => {
     assert.deepEqual(out, ["AskUserQuestion", "Bash", "WebFetch"]);
   });
 
+  it("passes OpenCode-only tools through without duplicating mapped ones", () => {
+    const out = getClaudeToolsForActiveOpenCodeTools([
+      { name: "task" }, // maps to Agent — Claude schema wins, no passthrough
+      { name: "task_message" }, // no Claude equivalent — passes through
+      { name: "ctx_reduce" }, // no Claude equivalent — passes through
+    ]).map((tool) => tool.name).sort();
+    assert.deepEqual(out, ["Agent", "ctx_reduce", "task_message"]);
+  });
+
   it("does not advertise WebSearch when only a custom websearch_cited tool is active", () => {
     const out = getClaudeToolsForActiveOpenCodeTools([
       { name: "webfetch" },
       { name: "websearch_cited" },
     ]).map((tool) => tool.name).sort();
-    assert.deepEqual(out, ["WebFetch"]);
+    // websearch_cited passes through with OpenCode's schema; WebSearch (a
+    // Claude tool with no OpenCode counterpart) is still never advertised.
+    assert.deepEqual(out, ["WebFetch", "websearch_cited"]);
   });
 
   it("does not advertise AskUserQuestion when OpenCode did not enable question", () => {
