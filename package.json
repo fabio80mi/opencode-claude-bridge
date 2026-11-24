@@ -1,34 +1,38 @@
 {
   "name": "opencode-claude-bridge",
-  "version": "1.10.12",
-  "description": "OpenCode ↔ Claude bridge — keychain sync + PKCE OAuth + request transformation",
+  "version": "2.0.0",
+  "description": "OpenCode v2 Claude bridge with CLI credential sync, OAuth, and request translation",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": "./dist/index.js"
+  },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test dist/index.test.js",
+    "test": "npm run build && node --test dist/*.test.js",
     "validate:oauth": "npm run build && node scripts/validate-opencode-oauth.js"
   },
-  "keywords": [
-    "opencode",
-    "anthropic",
-    "oauth",
-    "claude"
-  ],
+  "keywords": ["opencode", "anthropic", "oauth", "claude"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/dotCipher/opencode-claude-bridge"
+    "url": "https://github.com/fabio80mi/opencode-claude-bridge"
   },
   "author": "dotCipher",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.5.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.4.1",
+    "@opencode/schema": "2.4.1"
   }
 }

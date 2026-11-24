@@ -2,56 +2,42 @@
 
 ## This fork
 
-This repository is the maintained fork at [fabio80mi/opencode-claude-bridge](https://github.com/fabio80mi/opencode-claude-bridge).
+Maintained at [fabio80mi/opencode-claude-bridge](https://github.com/fabio80mi/opencode-claude-bridge). It connects OpenCode to Claude using Claude Code credentials or a Claude Pro/Max OAuth login, and translates requests and tool calls between the two clients.
 
-It lets OpenCode use Claude authentication and Claude Code-compatible request/response behavior. The fork exists because newer OpenCode hook payloads can expose model identity as an object instead of a plain string, while older bridge code assumes it can call `.match()` directly on that value. That can prevent the bridge from loading; when the bridge does not load, its Anthropic request cleanup—including assistant-prefill stripping—never runs.
+Version 2.0.0 targets OpenCode v2.4.1. It uses native v2 integration, provider, and HTTP hooks. It does not support OpenCode v1. Migration decisions and verification boundaries: [docs/OPENCODE-V2-MIGRATION.md](docs/OPENCODE-V2-MIGRATION.md). Earlier prefill-fix history: [docs/OPENCODE-PREFILL-FIX.md](docs/OPENCODE-PREFILL-FIX.md).
 
-The fork normalizes both current and legacy model identity shapes before model-name parsing and system-prompt rewriting. It also retains the fix that removes OpenCode's synthetic maximum-steps assistant prefill before requests reach Anthropic.
+## Changes in 2.0.0
 
-Implementation history and verification notes: [`docs/OPENCODE-PREFILL-FIX.md`](docs/OPENCODE-PREFILL-FIX.md).
+- Fix package discovery with an explicit server export and replace the v1 initialization function with a v2 plugin definition.
+- Register authentication through native Anthropic integration methods. OpenCode owns credential persistence and refresh; an existing API-key connection stays selected.
+- Register model additions and request/response hooks through v2 APIs, covering primary, compaction, title, and generate requests.
+- Retain assistant-prefill removal, message cleanup, active-tool schemas, and tool argument translation. Add non-streaming response translation and propagate stream cancellation upstream.
+- Split initialization, authentication, and wire translation into `index.ts`, `auth.ts`, and `transport.ts`; pin SDK dependencies to 2.4.1 and update the live validator to load the package directory.
 
-Use your Claude Pro/Max subscription in [OpenCode](https://opencode.ai). If you're logged into the Claude CLI, it just works — no extra setup.
+Verification: the TypeScript build and all 110 tests passed. Isolated SDK and loopback HTTP checks covered initialization and all four request kinds. After deployment, the maintainer reported that the plugin appears to work in OpenCode v2. Browser-login and real token-refresh cases were not separately verified.
 
-## Install
+## Install from this repository
 
-Add to `~/.config/opencode/opencode.json`:
+```bash
+git clone https://github.com/fabio80mi/opencode-claude-bridge.git ~/opencode-claude-bridge
+cd ~/opencode-claude-bridge
+npm ci
+npm test
+```
+
+Set the package directory in `~/.config/opencode/opencode.jsonc`, not `dist/index.js`:
 
 ```json
 {
-  "plugin": ["opencode-claude-bridge"]
+  "plugins": ["/absolute/path/to/opencode-claude-bridge"]
 }
 ```
 
-OpenCode auto-installs the plugin from npm on next launch.
+For a separate installed copy, deploy the updated source, package metadata, and lockfile there, then run `npm ci` and `npm run build` in that directory. Keep a backup outside OpenCode's plugin-discovery directories. The source repository and deployed copy are separate; editing one does not update the other.
 
-If you're logged into the Claude CLI (`claude login`), the plugin auto-syncs your credentials — just select an Anthropic model and start chatting. If not, you'll be prompted to authenticate via browser OAuth or enter an API key.
+Reload OpenCode after deployment. An existing API-key or environment-variable connection stays selected. If no Anthropic connection is active and Claude CLI credentials are available, the bridge imports them through OpenCode's OAuth connection flow. Otherwise select Claude Pro / Max (OAuth) in the Anthropic integration to connect.
 
-**Upgrade:**
-
-OpenCode pins the installed version. To upgrade to the latest:
-
-```bash
-cd ~/.cache/opencode && npm install opencode-claude-bridge@latest
-```
-
-Then restart OpenCode.
-
-<details>
-<summary>Install from source</summary>
-
-```bash
-git clone https://github.com/dotCipher/opencode-claude-bridge.git ~/opencode-claude-bridge
-cd ~/opencode-claude-bridge && npm install && npm run build
-```
-
-Then reference the full path in your config:
-
-```json
-{
-  "plugin": ["/Users/YOU/opencode-claude-bridge/dist/index.js"]
-}
-```
-</details>
+This fork's local version does not imply an npm publication. Do not install the upstream npm package expecting these v2 changes.
 
 ## How the bridge works
 
@@ -61,11 +47,11 @@ The plugin sits between OpenCode and the Anthropic API:
 
 ### Authentication
 
-Supports both OAuth and API key auth:
+Supports both OAuth and API key authentication:
 
-- **OAuth (Pro/Max)** — Auto-reads your Claude CLI's OAuth tokens from macOS Keychain (or `~/.claude/.credentials.json` on Linux). No browser flow needed. If Claude CLI isn't available, falls back to browser-based OAuth PKCE.
-- **API key** — Works alongside a standard `provider` entry in your OpenCode config with an `apiKey`. The plugin only activates its OAuth handling for the built-in `anthropic` provider; custom API key providers pass through unchanged.
-- **Token refresh** — When tokens expire, three layers are tried: re-read from Keychain, refresh via stored token, refresh via CLI's token.
+- OAuth credentials come from Claude CLI on macOS Keychain or Linux `~/.claude/.credentials.json`, with browser PKCE and manual-code fallback when needed.
+- OpenCode v2 owns credential persistence and invokes the bridge's refresh callback for expired OAuth grants. Refresh checks valid CLI credentials, the stored refresh token, then the CLI refresh token.
+- API-key and environment-variable connections use OpenCode's native authentication. Their requests and responses bypass the OAuth wire transformations. No process-wide API key is overwritten.
 
 ### Wire-level request matching
 
@@ -76,23 +62,11 @@ Every outbound OAuth request is rewritten to match what Claude Code sends on the
 - **System prompt** — Claude Code's real system prompt is captured via the validator and cached at `~/.cache/opencode-claude-bridge/claude-system-prompt.json`. The bridge injects this as the system prompt for all requests. OpenCode's default system prompt is sanitized out.
 - **MCP tool prefixing** — OpenCode's MCP tools are prefixed with `mcp_` to match Claude Code's convention.
 
-### Tool wire-matching (v1.9.0)
+### Tool schemas
 
-Claude Code sends 26 captured core tools (plus user-specific MCP tools). OpenCode has 10. These differ in names, descriptions, schemas, parameter names, required fields, and sort order.
+The bridge retains the captured Claude Code tool definitions but sends only tools enabled in the current OpenCode request. It maps shared tool names and parameters, preserves custom tools with their original schemas, and does not advertise unavailable Claude-only stub tools. Requests without tools remain tool-less.
 
-The bridge resolves this by:
-
-1. **Replacing OpenCode's tool definitions only for Claude-compatible targets** with Claude Code's exact wire-captured definitions — matching descriptions, JSON schemas, parameter names, and required fields.
-2. **Adding 16 Claude-only stub tools**: `AskUserQuestion`, `CronCreate`, `CronDelete`, `CronList`, `EnterPlanMode`, `EnterWorktree`, `ExitPlanMode`, `ExitWorktree`, `Monitor`, `NotebookEdit`, `PushNotification`, `RemoteTrigger`, `ScheduleWakeup`, `TaskOutput`, `TaskStop`, `WebSearch`.
-3. **Sorting all 26 tools alphabetically** to match Claude Code's ordering.
-
-If the model calls a stub tool, OpenCode's built-in error handling catches it, tells the model the tool is unavailable, and the model adapts on the next turn.
-
-The bridge now selects tool schemas by target/model:
-
-- **Anthropic direct** -> Claude wire schemas
-- **OpenRouter Claude models** -> Claude wire schemas
-- **Everything else** -> OpenCode's default tool schemas
+These wire transformations run for OAuth requests to the built-in Anthropic provider. API-key connections and other providers retain their native behavior.
 
 ### Bidirectional parameter translation
 
@@ -156,10 +130,10 @@ The salt is hardcoded in Claude Code's source. This changes per conversation bec
 
 ## Requirements
 
-- [OpenCode](https://opencode.ai) v1.2+
-- For OAuth: [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) installed and logged in (`claude login`)
-- macOS (Keychain) or Linux (`~/.claude/.credentials.json` fallback)
-- For API key: just configure a `provider` with `apiKey` in your OpenCode config as usual
+- [OpenCode](https://opencode.ai) v2.4.1, matching the pinned `@opencode/plugin` and `@opencode/schema` dependencies.
+- For local builds: Node.js 22.15 or newer and npm.
+- For OAuth: Claude CLI installed and logged in (`claude login`), or browser OAuth.
+- macOS Keychain or Linux credential-file support for CLI credential import.
 
 ## Environment overrides
 
@@ -186,11 +160,11 @@ Most users won't need to change these — the bridge auto-detects the installed 
 
 This fork includes several fixes discovered during debugging sessions:
 
-- **Plugin loading** — Use the absolute plugin path `/home/ubuntu/.config/opencode/plugins/opencode-claude-bridge/dist/index.js` in `opencode.jsonc` to prevent OpenCode from falling back to an unfixed npm/cache version when launched from a different directory.
+- Plugin loading uses the package directory and its explicit `./server` export. The default export is a v2 plugin definition with id `opencode-claude-bridge`.
 - **Assistant prefill stripping** — The bridge strips OpenCode's synthetic maximum-steps assistant prefill before requests reach Anthropic, preventing `This model does not support assistant message prefill` errors.
 - **Message sanitization** — Before sending to Anthropic, the bridge removes OpenCode-specific message content blocks that Anthropic rejects: `thinking` blocks, `caller` metadata on `tool_use` blocks, and empty/whitespace-only `text` blocks.
 - **Thinking config sanitization** — Strips OpenCode-only `block_binding` from the `thinking` config object to prevent `thinking.adaptive.block_binding: Extra inputs are not permitted` errors. Thinking functionality is preserved.
-- **Debug logging** — Set `OPENCODE_CLAUDE_BRIDGE_DEBUG=true` to enable verbose bridge logging. Writes to `/tmp/opencode-claude-bridge.log`. When disabled or unset, logging is skipped entirely with zero runtime overhead.
+- Debug logging is opt-in through `OPENCODE_CLAUDE_BRIDGE_DEBUG=true` and writes to `/tmp/opencode-claude-bridge.log`.
 
 ## Debugging
 
@@ -206,13 +180,12 @@ Or add it to your shell profile for persistent debugging:
 export OPENCODE_CLAUDE_BRIDGE_DEBUG=true
 ```
 
-When disabled or unset (default), logging is skipped entirely — zero runtime overhead.
+When disabled or unset (the default), the bridge does not write debug log entries.
 
 Log entries include:
 
 - Plugin initialization
-- System transform hook entry/exit
-- Fetch wrapper auth bypass / OAuth refresh failures
+- Native HTTP request and response transformation
 - Request model, message count, and last message role before and after prefill stripping
 - Message sanitization counts (`thinking`, `caller`, `emptyText` removed)
 - Thinking config sanitization (`block_binding` removal)
@@ -233,7 +206,7 @@ The validator will:
 
 - Query the OAuth usage endpoint before and after each run
 - Capture an official Claude Code request through a local proxy
-- Capture an OpenCode request using this repo's local `dist/index.js`
+- Capture an OpenCode request using this repository's package directory
 - Write Claude Code's captured system prompt to `~/.cache/opencode-claude-bridge/claude-system-prompt.json`
 - Save request and response artifacts under `tmp/validate-*`
 - Write a `report.json` with request diffs, body hashes, and usage snapshots
@@ -267,19 +240,19 @@ Key things that have changed across versions:
 
 ## Architecture
 
-```
+```text
 src/
-  index.ts          — Main plugin entry point: tool replacement, request/response
-                      transformation, bidirectional parameter translation (~886 lines)
-  claude-tools.ts   — 24 Claude Code tool definitions, fingerprint computation,
-                      parameter translation maps (~757 lines)
-  constants.ts      — Version strings, URLs, env overrides, header values (117 lines)
-  keychain.ts       — macOS Keychain access for OAuth tokens
-  oauth.ts          — OAuth PKCE flow with local callback server
-
+  index.ts          V2 plugin definition, model inventory, native HTTP hooks
+  auth.ts           V2 integration methods, CLI import, OAuth refresh ownership
+  transport.ts      OAuth headers, body cleanup, tool translation, response streams
+  claude-tools.ts   Captured Claude tool definitions and argument maps
+  constants.ts      Versions, URLs, environment overrides, headers
+  keychain.ts       Claude CLI credentials on macOS and Linux
+  oauth.ts          PKCE, token exchange, local callback server
+  stream.ts         Fragment-safe SSE tool translation
 scripts/
-  validate-opencode-oauth.js  — Side-by-side wire comparison tool
-  intercept-claude.sh         — mitmproxy-based Claude CLI request capture
+  validate-opencode-oauth.js  Live side-by-side wire comparison
+  intercept-claude.sh        Claude CLI request capture
 ```
 
 ## Important limitation

@@ -242,15 +242,17 @@ async function captureOpenCode({ model, prompt, outDir, replaySession }) {
   const configRoot = mkdtempSync(join(tmpdir(), "opencode-bridge-"));
   const configDir = join(configRoot, "opencode");
   mkdirSync(configDir, { recursive: true });
+  const proxy = await startCaptureProxy("opencode", outDir);
   writeFileSync(join(configDir, "opencode.json"), JSON.stringify({
     $schema: "https://opencode.ai/config.json",
-    plugin: [distPluginPath],
+    plugins: [repoRoot],
+    providers: { anthropic: { settings: { baseURL: `http://127.0.0.1:${proxy.port}` } } },
   }, null, 2));
 
-  const proxy = await startCaptureProxy("opencode", outDir);
   try {
     const result = await runCommand("opencode", [
       "run",
+      "--standalone",
       "--model",
       `anthropic/${model}`,
       "--format",
@@ -259,7 +261,6 @@ async function captureOpenCode({ model, prompt, outDir, replaySession }) {
     ], {
       env: {
         XDG_CONFIG_HOME: configRoot,
-        ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
         ...(replaySession?.sessionID ? { ANTHROPIC_SESSION_ID: replaySession.sessionID } : {}),
         ...(replaySession?.billingCch ? { ANTHROPIC_BILLING_CCH: replaySession.billingCch } : {}),
       },

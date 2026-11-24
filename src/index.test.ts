@@ -19,123 +19,47 @@ import {
 } from "./claude-tools.js";
 import { extractOAuthErrorDetail } from "./oauth.js";
 import {
+  createClaudeTransport,
   deriveModelDisplayName,
   getClaudeToolsForActiveOpenCodeTools,
   rewriteSystemBlocksForModel,
   shouldInjectClaudeTools,
   stripAssistantPrefillForClaude,
   stripSystemCacheControl,
-} from "./index.js";
+} from "./transport.js";
 import { createSseProcessor, parseSseEvent, buildSseEvent } from "./stream.js";
 
-// ── Helpers (extracted / reimplemented from index.ts for unit testing) ────────
-
-const THINKING_MODELS = [
-  "claude-opus-4",
-  "claude-sonnet-4-6",
-];
-
-function shouldInjectThinking(model: string | undefined): boolean {
-  if (!model) return false;
-  return THINKING_MODELS.some((m) => model.includes(m));
-}
-
-// Simulate the body-transform logic from the fetch wrapper
-function transformBody(bodyStr: string): Record<string, unknown> {
-  const parsed = JSON.parse(bodyStr);
-
-  const supportsThinking = shouldInjectThinking(parsed.model);
-  if (!parsed.thinking && supportsThinking) {
-    parsed.thinking = { type: "adaptive" };
+describe("OAuth request thinking policy", () => {
+  async function transform(t: import("node:test").TestContext, body: Record<string, unknown>) {
+    t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ account: { uuid: "fixture-account" } }), { headers: { "content-type": "application/json" } }));
+    const transport = createClaudeTransport({
+      resolve: async () => ({ access: "fixture-access", refresh: "fixture-refresh", expires: Date.now() + 3600000 }),
+      refresh: async () => { throw new Error("Unexpected token refresh"); },
+      dispose() {},
+    });
+    const request = await transport.request(new Request("https://api.anthropic.com/v1/messages", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }], ...body }),
+    }));
+    return request.json();
   }
 
-  const thinkingType = parsed.thinking?.type;
-  if (
-    (thinkingType === "enabled" || thinkingType === "adaptive") &&
-    parsed.temperature !== undefined &&
-    parsed.temperature !== 1
-  ) {
-    parsed.temperature = 1;
-  }
-
-  return parsed;
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-describe("thinking injection", () => {
-  it("does NOT inject thinking for claude-sonnet-4-5", () => {
-    const out = transformBody(JSON.stringify({ model: "claude-sonnet-4-5", messages: [] }));
-    assert.equal(out.thinking, undefined, "sonnet-4-5 must not get thinking injected");
-  });
-
-  it("does NOT inject thinking for claude-haiku-4-5-20251001", () => {
-    const out = transformBody(JSON.stringify({ model: "claude-haiku-4-5-20251001", messages: [] }));
-    assert.equal(out.thinking, undefined, "haiku must not get thinking injected");
-  });
-
-  it("does NOT inject thinking for an unknown model", () => {
-    const out = transformBody(JSON.stringify({ model: "gpt-4o", messages: [] }));
-    assert.equal(out.thinking, undefined, "unknown model must not get thinking injected");
-  });
-
-  it("injects adaptive thinking for claude-sonnet-4-6", () => {
-    const out = transformBody(JSON.stringify({ model: "claude-sonnet-4-6", messages: [] }));
+  it("injects adaptive thinking and coerces temperature for supported models", async (t) => {
+    const out = await transform(t, { model: "claude-sonnet-4-6", temperature: 0.7 });
     assert.deepEqual(out.thinking, { type: "adaptive" });
-  });
-
-  it("injects adaptive thinking for claude-opus-4-5", () => {
-    const out = transformBody(JSON.stringify({ model: "claude-opus-4-5", messages: [] }));
-    assert.deepEqual(out.thinking, { type: "adaptive" });
-  });
-
-  it("injects adaptive thinking for claude-opus-4-6", () => {
-    const out = transformBody(JSON.stringify({ model: "claude-opus-4-6", messages: [] }));
-    assert.deepEqual(out.thinking, { type: "adaptive" });
-  });
-
-  it("does not overwrite an existing thinking block", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-6", messages: [], thinking: { type: "disabled" } }),
-    );
-    assert.deepEqual(out.thinking, { type: "disabled" });
-  });
-});
-
-describe("temperature coercion", () => {
-  it("forces temperature to 1 when adaptive thinking is injected", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-6", messages: [], temperature: 0.7 }),
-    );
     assert.equal(out.temperature, 1);
   });
 
-  it("forces temperature to 1 when thinking:enabled is already set", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-6", messages: [], thinking: { type: "enabled" }, temperature: 0 }),
-    );
-    assert.equal(out.temperature, 1);
-  });
-
-  it("does not touch temperature when thinking is not injected (sonnet-4-5)", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-5", messages: [], temperature: 0.7 }),
-    );
+  it("leaves unsupported models without thinking or temperature coercion", async (t) => {
+    const out = await transform(t, { model: "claude-haiku-4-5-20251001", temperature: 0.7 });
+    assert.equal(out.thinking, undefined);
     assert.equal(out.temperature, 0.7);
   });
 
-  it("does not touch temperature when it is already 1", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-6", messages: [], temperature: 1 }),
-    );
-    assert.equal(out.temperature, 1);
-  });
-
-  it("does not touch temperature when it is absent", () => {
-    const out = transformBody(
-      JSON.stringify({ model: "claude-sonnet-4-6", messages: [] }),
-    );
-    assert.equal(out.temperature, undefined);
+  it("preserves explicitly disabled thinking and strips OpenCode-only fields", async (t) => {
+    const out = await transform(t, { model: "claude-sonnet-4-6", thinking: { type: "disabled", block_binding: "internal" }, temperature: 0.7 });
+    assert.deepEqual(out.thinking, { type: "disabled" });
+    assert.equal(out.temperature, 0.7);
   });
 });
 
